@@ -1,6 +1,5 @@
-import os
 import re
-import fitz  # PyMuPDF for PDF text extraction
+import PyPDF2
 import spacy
 from keybert import KeyBERT
 from sentence_transformers import SentenceTransformer, util
@@ -15,13 +14,58 @@ embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 tokenizer = BertTokenizer.from_pretrained("allenai/scibert_scivocab_uncased")
 model = BertForTokenClassification.from_pretrained("allenai/scibert_scivocab_uncased")
 
-def extract_from_pdf(pdf_path):
-    """Extract text from a PDF document."""
+def extract_text_from_file(uploaded_file):
     text = ""
-    with fitz.open(pdf_path) as doc:
-        for page in doc:
-            text += page.get_text()
+    reader = PyPDF2.PdfReader(uploaded_file)
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
     return text
+
+def extract_text_from_pdf(pdf_path):
+    text = ""
+    with open(pdf_path, 'rb') as f:
+        reader = PyPDF2.PdfReader(f)
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+    return text
+
+def clean_courseware_text(text):
+    # 去除页码、版权、学校名等信息
+    text = re.sub(r'\bPage \d+ of \d+\b', '', text)
+    text = re.sub(r'\b(Copyright|©|All Rights Reserved).*\n?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(University|Institute|School).*\n?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(COPYRIGHT|CONFIDENTIAL|DRAFT|VERSION \d+)\b', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'Figure\s*\d+:.*', '', text, flags=re.IGNORECASE)
+
+    # 替换公式为标记
+    text = re.sub(r'(\$.*?\$|\\\[.*?\\\])', '[FORMULA]', text)
+
+    # 去除奇怪的 Unicode 字符（保留英文、标点）
+    text = re.sub(r'[^\x00-\x7F]+', ' ', text)
+
+    # 去除典型“表格标题 + 数值行”结构
+    text = re.sub(r'(\d{1,3}(?:,\d{3})*\.?\d*\s+[A-Za-z ]+\s+(?:-?\d{1,3}(?:,\d{3})*\.?\d*\s*){2,})', '', text)
+
+    # 删除数字密度过高的段落（数字比例 > 50%）
+    lines = text.split('\n')
+    filtered_lines = []
+    for line in lines:
+        tokens = line.strip().split()
+        if not tokens:
+            continue
+        num_tokens = sum(1 for tok in tokens if re.match(r'-?\d{1,3}(?:,\d{3})*(?:\.\d+)?$', tok))
+        if num_tokens / len(tokens) < 0.5:
+            filtered_lines.append(line.strip())
+
+    # 去重 + 去空行
+    unique_lines = list(dict.fromkeys([l for l in filtered_lines if l]))
+    text = '\n'.join(unique_lines)
+
+    return text.strip()
 
 def preprocess_text(text):
     """Enhance text cleaning while retaining key AI terms."""
@@ -56,10 +100,8 @@ def refine_keywords(keyword_list):
     clustered_keywords = util.community_detection(embeddings, threshold=0.7)
     return clustered_keywords
 
-def hybrid_keyword_extraction(pdf_path, num_keywords=15):
+def hybrid_keyword_extraction(clean_text, num_keywords=15):
     """Complete keyword extraction pipeline."""
-    raw_text = extract_from_pdf(pdf_path)
-    clean_text = preprocess_text(raw_text)
     
     keybert_keywords = extract_keywords_keybert(clean_text, num_keywords)
     # sciBERT_keywords = extract_keywords_sciBERT(clean_text)

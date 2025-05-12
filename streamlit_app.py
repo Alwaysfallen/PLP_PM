@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from cui_src.classify import classify_intent
-from kwe_src.mindmap1 import extract_text_from_pdf, clean_courseware_text
+from kwe_src.extraction import extract_text_from_file, clean_courseware_text
 from keybert import KeyBERT
 from transformers import pipeline, AutoTokenizer
 import nltk
@@ -26,7 +26,7 @@ if uploaded_file:
     st.success("✅ Document uploaded successfully!")
 
     # Extract text
-    document_text = extract_text_from_pdf(uploaded_file)
+    document_text = extract_text_from_file(uploaded_file)
     cleaned_text = clean_courseware_text(document_text)
 
     # User Input for Intent Classification

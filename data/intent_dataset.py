@@ -18,11 +18,6 @@ intent_examples = {
         "Visualize concepts",
         "Turn text into a structured map"
     ],
-    "Multi-Document Consolidation": [
-        "Merge multiple documents",
-        "Combine several text files",
-        "Create a unified report from documents"
-    ],
     "Exit Application": [
         "Close the program",
         "Exit the application",

@@ -15,7 +15,7 @@ embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 tokenizer = BertTokenizer.from_pretrained("allenai/scibert_scivocab_uncased")
 model = BertForTokenClassification.from_pretrained("allenai/scibert_scivocab_uncased")
 
-def extract_text_from_pdf(pdf_path):
+def extract_from_pdf(pdf_path):
     """Extract text from a PDF document."""
     text = ""
     with fitz.open(pdf_path) as doc:
@@ -58,7 +58,7 @@ def refine_keywords(keyword_list):
 
 def hybrid_keyword_extraction(pdf_path, num_keywords=15):
     """Complete keyword extraction pipeline."""
-    raw_text = extract_text_from_pdf(pdf_path)
+    raw_text = extract_from_pdf(pdf_path)
     clean_text = preprocess_text(raw_text)
     
     keybert_keywords = extract_keywords_keybert(clean_text, num_keywords)

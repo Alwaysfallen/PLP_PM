@@ -2,8 +2,14 @@ import os
 import sys
 from data.intent_dataset import intent_examples
 from cui_src.classify import classify_intent
-from kwe_src.extraction import extract_text_from_pdf
+from kwe_src.mindmap1 import extract_text_from_pdf, clean_courseware_text
 from keybert import KeyBERT
+from transformers import pipeline, AutoTokenizer
+import nltk
+from nltk import sent_tokenize
+from collections import Counter
+import networkx as nx
+import matplotlib.pyplot as plt
 
 class IntentCUI:
     """
@@ -23,8 +29,10 @@ class IntentCUI:
         # Initialize KeyBERT model
         try:
             self.kw_model = KeyBERT()
+            self.summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+            self.tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
         except Exception as e:
-            print(f"Error initializing KeyBERT model: {e}")
+            print(f"Error initializing models: {e}")
             self.kw_model = None
 
 
@@ -86,10 +94,15 @@ class IntentCUI:
             print(f"\n🔑 Keywords:\n{', '.join(keywords)}")
 
         elif self.predicted_intent == "Mind Map Visualization":
-            print("\n🗺 Generating mind map... (Placeholder, integrate visualization logic here)")
+            if not self.document_text:
+                print("⚠️ No document loaded. Please upload a PDF first.")
+                return
+    
+            print("\n🗺 Generating mind map...")
+            cleaned_text = clean_courseware_text(not self.document_text)
+            image = self.generate_mind_map(cleaned_text)
+            print("\n✅ Mind map generated and saved as 'mind_map.png'!")
 
-        elif self.predicted_intent == "Multi-Document Consolidation":
-            print("\n📑 Consolidating multiple documents... (Placeholder for processing logic)")
         else:
             print("\n🤔 Sorry, I didn't understand that intent.")
 
@@ -114,6 +127,59 @@ class IntentCUI:
         except Exception as e:
             print(f"An error occurred during KeyBERT keyword extraction: {e}")
             return []
+        
+    def generate_mind_map(self, text):
+        input_ids = self.tokenizer(text, truncation=True, max_length=None)['input_ids']
+        if len(input_ids) > 1024:
+            sentences = sent_tokenize(text)
+            chunks = []
+            current_chunk = ""
+            for sentence in sentences:
+                if len(self.tokenizer.tokenize(current_chunk + sentence)) <= 1024:
+                    current_chunk += sentence + " "
+                else:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = sentence + " "
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+
+            summaries = []
+            keywords_list = []
+            for chunk in chunks:
+                summary = self.summarizer(chunk, max_length=130, min_length=30, do_sample=False)[0]['summary_text']
+                keywords = self.kw_model.extract_keywords(chunk, keyphrase_ngram_range=(1, 2), top_n=10)
+                summaries.append(summary)
+                keywords_list.append(keywords)
+
+            summary = " ".join(summaries)
+            keywords = [kw for sublist in keywords_list for kw in sublist]
+
+        else:
+            summary = self.summarizer(text, max_length=130, min_length=30, do_sample=False)[0]['summary_text']
+            keywords = self.kw_model.extract_keywords(text, keyphrase_ngram_range=(1, 2), top_n=10)
+
+        # Build mind map graph
+        G = nx.DiGraph()
+        keyword_weights = Counter([kw for kw, score in keywords])
+        central_topic = keyword_weights.most_common(1)[0][0]
+        G.add_node("Root", label=central_topic)
+
+        topics = nltk.sent_tokenize(summary)
+        for topic in topics:
+            G.add_node(topic, label=topic)
+            G.add_edge("Root", topic)
+
+        for keyword, score in keywords:
+            if keyword != central_topic and keyword not in topics:
+                G.add_node(keyword, label=keyword)
+                G.add_edge(topics[0], keyword)
+
+        # Visualize mind map
+        pos = nx.spring_layout(G, k=0.5, iterations=50)
+        plt.figure(figsize=(10, 8))
+        nx.draw(G, pos, with_labels=True, node_color="lightblue", node_size=1500, font_size=10)
+        plt.title("Mind Map - Generated from PDF")
+        plt.savefig("/logs/mind_map.png")
     
     def exit_cui(self):
         """Handle graceful exit"""

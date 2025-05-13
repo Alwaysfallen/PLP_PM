@@ -1,0 +1,15 @@
+os
+re
+sentence-transformers
+transformers
+sys
+nltk
+networkx
+matplotlib
+pandas
+seaborn
+sklearn
+numpy
+PyPDF2
+spacy
+keybert
